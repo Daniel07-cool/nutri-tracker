@@ -9,6 +9,10 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 const JWT_SECRET = "cambiar-por-una-clave-segura";
 
+app.use(cors({
+  origin: "https://nutri-tracker-fht4.vercel.app"
+}));
+
 
 app.use(express.json());
 const ALLOWED_MEALS = [
@@ -475,9 +479,7 @@ app.get("/api/summary", authMiddleware, (req, res) => {
   res.json(total);
 });
 
-app.use(cors({
-  origin: "https://nutri-tracker-fht4.vercel.app"
-}));
+
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Backend escuchando en puerto ${PORT}`);
