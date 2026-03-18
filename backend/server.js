@@ -3,13 +3,13 @@ import cors from "cors";
 import db from "./database.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import cors from "cors";
+
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 const JWT_SECRET = "cambiar-por-una-clave-segura";
 
-app.use(cors());
+
 app.use(express.json());
 const ALLOWED_MEALS = [
   "Desayuno",
@@ -476,7 +476,7 @@ app.get("/api/summary", authMiddleware, (req, res) => {
 });
 
 app.use(cors({
-  origin: "https://nutri-tracker-fht4.vercel.app/"
+  origin: "https://nutri-tracker-fht4.vercel.app"
 }));
 
 app.listen(PORT, "0.0.0.0", () => {
