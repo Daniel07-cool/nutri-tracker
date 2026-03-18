@@ -3,9 +3,10 @@ import cors from "cors";
 import db from "./database.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import cors from "cors";
 
 const app = express();
-const PORT = 4000;
+const PORT = process.env.PORT || 4000;
 const JWT_SECRET = "cambiar-por-una-clave-segura";
 
 app.use(cors());
@@ -474,6 +475,10 @@ app.get("/api/summary", authMiddleware, (req, res) => {
   res.json(total);
 });
 
-app.listen(PORT, () => {
-  console.log(`Backend escuchando en http://localhost:${PORT}`);
+app.use(cors({
+  origin: "https://nutri-tracker-fht4.vercel.app/"
+}));
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Backend escuchando en puerto ${PORT}`);
 });
