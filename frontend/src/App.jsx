@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-const API_URL = "http://localhost:4000/api";
+const API_URL = "https://nutri-tracker.onrender.com/api";
 
 const MEAL_TYPES = [
   "Desayuno",
