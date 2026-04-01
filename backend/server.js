@@ -1,9 +1,9 @@
 import express from "express";
 import cors from "cors";
-import db from "./database.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-
+import pool from "./db.js";
+import { initDb } from "./initDb.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -19,6 +19,7 @@ app.use(cors({
 
 
 app.use(express.json());
+await initDb();
 const ALLOWED_MEALS = [
   "Desayuno",
   "Almuerzo",
@@ -28,6 +29,8 @@ const ALLOWED_MEALS = [
   "Colación Tarde",
   "Colación Noche"
 ];
+
+
 
 function parseCategories(raw) {
   try {
@@ -73,28 +76,25 @@ app.post("/api/auth/register", async (req, res) => {
     return res.status(400).json({ error: "Faltan datos obligatorios." });
   }
 
-  const existingUser = db.prepare(`
-    SELECT id FROM users WHERE email = ?
-  `).get(email.trim().toLowerCase());
+  const existingUser = await pool.query(
+    `SELECT id FROM users WHERE email = $1`,
+    [email.trim().toLowerCase()]
+  );
 
-  if (existingUser) {
+  if (existingUser.rows.length > 0) {
     return res.status(400).json({ error: "Ese email ya está registrado." });
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
 
-  const result = db.prepare(`
-    INSERT INTO users (name, email, password_hash)
-    VALUES (?, ?, ?)
-  `).run(
-    name.trim(),
-    email.trim().toLowerCase(),
-    passwordHash
+  const result = await pool.query(
+    `INSERT INTO users (name, email, password_hash)
+     VALUES ($1, $2, $3)
+     RETURNING id, name, email`,
+    [name.trim(), email.trim().toLowerCase(), passwordHash]
   );
 
-  const user = db.prepare(`
-    SELECT id, name, email FROM users WHERE id = ?
-  `).get(result.lastInsertRowid);
+  const user = result.rows[0];
 
   const token = jwt.sign(
     { id: user.id, email: user.email, name: user.name },
@@ -112,9 +112,12 @@ app.post("/api/auth/login", async (req, res) => {
     return res.status(400).json({ error: "Email y contraseña son obligatorios." });
   }
 
-  const user = db.prepare(`
-    SELECT * FROM users WHERE email = ?
-  `).get(email.trim().toLowerCase());
+  const result = await pool.query(
+    `SELECT * FROM users WHERE email = $1`,
+    [email.trim().toLowerCase()]
+  );
+
+  const user = result.rows[0];
 
   if (!user) {
     return res.status(401).json({ error: "Credenciales inválidas." });
@@ -142,12 +145,13 @@ app.post("/api/auth/login", async (req, res) => {
   });
 });
 
-app.get("/api/auth/me", authMiddleware, (req, res) => {
-  const user = db.prepare(`
-    SELECT id, name, email
-    FROM users
-    WHERE id = ?
-  `).get(req.user.id);
+app.get("/api/auth/me", authMiddleware, async (req, res) => {
+  const result = await pool.query(
+    `SELECT id, name, email FROM users WHERE id = $1`,
+    [req.user.id]
+  );
+
+  const user = result.rows[0];
 
   if (!user) {
     return res.status(404).json({ error: "Usuario no encontrado." });
@@ -160,15 +164,15 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/entries", authMiddleware, (req, res) => {
+app.get("/api/entries", authMiddleware, async (req, res) => {
   const date = req.query.date;
 
   if (!date) {
     return res.status(400).json({ error: "La fecha es obligatoria." });
   }
 
-  const rows = db.prepare(`
-    SELECT
+  const result = await pool.query(
+    `SELECT
       dr.id,
       dr.user_id,
       dr.entry_date,
@@ -182,12 +186,13 @@ app.get("/api/entries", authMiddleware, (req, res) => {
       p.categories
     FROM daily_records dr
     INNER JOIN products p ON p.id = dr.product_id
-    WHERE dr.entry_date = ?
-      AND dr.user_id = ?
-    ORDER BY dr.id DESC
-  `).all(date, req.user.id);
+    WHERE dr.entry_date = $1
+      AND dr.user_id = $2
+    ORDER BY dr.id DESC`,
+    [date, req.user.id]
+  );
 
-  const entries = rows.map((row) => ({
+  const entries = result.rows.map((row) => ({
     ...row,
     categories: parseCategories(row.categories)
   }));
@@ -195,11 +200,11 @@ app.get("/api/entries", authMiddleware, (req, res) => {
   res.json(entries);
 });
 
-app.get("/api/products", (req, res) => {
+app.get("/api/products", async (req, res) => {
   const category = req.query.category;
-  const rows = db.prepare(`SELECT * FROM products ORDER BY name ASC`).all();
+  const result = await pool.query(`SELECT * FROM products ORDER BY name ASC`);
 
-  const products = rows.map((row) => ({
+  const products = result.rows.map((row) => ({
     ...row,
     categories: parseCategories(row.categories)
   }));
@@ -215,7 +220,7 @@ app.get("/api/products", (req, res) => {
   res.json(filtered);
 });
 
-app.post("/api/products", (req, res) => {
+app.post("/api/products", async (req, res) => {
   const {
     name,
     measureType,
@@ -238,8 +243,8 @@ app.post("/api/products", (req, res) => {
     ? categories.map((item) => String(item).trim()).filter(Boolean)
     : [];
 
-  const result = db.prepare(`
-    INSERT INTO products (
+  const result = await pool.query(
+    `INSERT INTO products (
       name,
       measure_type,
       reference_value,
@@ -247,17 +252,20 @@ app.post("/api/products", (req, res) => {
       weight_per_unit,
       unit_label,
       categories
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    name.trim(),
-    measureType,
-    Number(referenceValue),
-    Number(referenceCalories),
-    weightPerUnit ? Number(weightPerUnit) : null,
-    unitLabel?.trim() || (measureType === "Gramos" ? "g" : "unidad"),
-    JSON.stringify(cleanCategories)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+    RETURNING *`,
+    [
+      name.trim(),
+      measureType,
+      Number(referenceValue),
+      Number(referenceCalories),
+      weightPerUnit ? Number(weightPerUnit) : null,
+      unitLabel?.trim() || (measureType === "Gramos" ? "g" : "unidad"),
+      JSON.stringify(cleanCategories)
+    ]
   );
-  const created = db.prepare(`SELECT * FROM products WHERE id = ?`).get(result.lastInsertRowid);
+
+  const created = result.rows[0];
 
   res.status(201).json({
     ...created,
@@ -265,7 +273,7 @@ app.post("/api/products", (req, res) => {
   });
 });
 
-app.put("/api/products/:id", (req, res) => {
+app.put("/api/products/:id", async (req, res) => {
   const productId = Number(req.params.id);
   const {
     name,
@@ -277,7 +285,12 @@ app.put("/api/products/:id", (req, res) => {
     categories
   } = req.body;
 
-  const existing = db.prepare(`SELECT * FROM products WHERE id = ?`).get(productId);
+  const existingResult = await pool.query(
+    `SELECT * FROM products WHERE id = $1`,
+    [productId]
+  );
+  const existing = existingResult.rows[0];
+
   if (!existing) {
     return res.status(404).json({ error: "Producto no encontrado." });
   }
@@ -290,28 +303,30 @@ app.put("/api/products/:id", (req, res) => {
     ? categories.map((item) => String(item).trim()).filter(Boolean)
     : [];
 
-  db.prepare(`
-    UPDATE products
-    SET name = ?,
-        measure_type = ?,
-        reference_value = ?,
-        reference_calories = ?,
-        weight_per_unit = ?,
-        unit_label = ?,
-        categories = ?
-    WHERE id = ?
-  `).run(
-    name.trim(),
-    measureType,
-    Number(referenceValue),
-    Number(referenceCalories),
-    weightPerUnit ? Number(weightPerUnit) : null,
-    unitLabel?.trim() || (measureType === "Gramos" ? "g" : "unidad"),
-    JSON.stringify(cleanCategories),
-    productId
+  const result = await pool.query(
+    `UPDATE products
+     SET name = $1,
+         measure_type = $2,
+         reference_value = $3,
+         reference_calories = $4,
+         weight_per_unit = $5,
+         unit_label = $6,
+         categories = $7
+     WHERE id = $8
+     RETURNING *`,
+    [
+      name.trim(),
+      measureType,
+      Number(referenceValue),
+      Number(referenceCalories),
+      weightPerUnit ? Number(weightPerUnit) : null,
+      unitLabel?.trim() || (measureType === "Gramos" ? "g" : "unidad"),
+      JSON.stringify(cleanCategories),
+      productId
+    ]
   );
 
-  const updated = db.prepare(`SELECT * FROM products WHERE id = ?`).get(productId);
+  const updated = result.rows[0];
 
   res.json({
     ...updated,
@@ -319,32 +334,38 @@ app.put("/api/products/:id", (req, res) => {
   });
 });
 
-app.delete("/api/products/:id", (req, res) => {
+app.delete("/api/products/:id", async (req, res) => {
   const productId = Number(req.params.id);
 
-  const existing = db.prepare(`SELECT * FROM products WHERE id = ?`).get(productId);
+  const existingResult = await pool.query(
+    `SELECT * FROM products WHERE id = $1`,
+    [productId]
+  );
+  const existing = existingResult.rows[0];
+
   if (!existing) {
     return res.status(404).json({ error: "Producto no encontrado." });
   }
 
-  const usedInRecords = db.prepare(`
-    SELECT COUNT(*) as total
-    FROM daily_records
-    WHERE product_id = ?
-  `).get(productId);
+  const usedInRecordsResult = await pool.query(
+    `SELECT COUNT(*)::int as total
+     FROM daily_records
+     WHERE product_id = $1`,
+    [productId]
+  );
 
-  if (usedInRecords.total > 0) {
+  if (usedInRecordsResult.rows[0].total > 0) {
     return res.status(400).json({
       error: "No se puede eliminar el producto porque ya tiene registros asociados."
     });
   }
 
-  db.prepare(`DELETE FROM products WHERE id = ?`).run(productId);
+  await pool.query(`DELETE FROM products WHERE id = $1`, [productId]);
   res.json({ ok: true });
 });
 
 
-app.post("/api/entries", authMiddleware, (req, res) => {
+app.post("/api/entries", authMiddleware, async (req, res) => {
   const {
     date,
     mealType,
@@ -360,9 +381,11 @@ app.post("/api/entries", authMiddleware, (req, res) => {
     return res.status(400).json({ error: "Tipo de comida inválido." });
   }
 
-  const product = db.prepare(`
-    SELECT * FROM products WHERE id = ?
-  `).get(productId);
+  const productResult = await pool.query(
+    `SELECT * FROM products WHERE id = $1`,
+    [productId]
+  );
+  const product = productResult.rows[0];
 
   if (!product) {
     return res.status(404).json({ error: "Producto no encontrado." });
@@ -372,38 +395,39 @@ app.post("/api/entries", authMiddleware, (req, res) => {
     calculateCalories(product, quantityConsumed).toFixed(2)
   );
 
-  const result = db.prepare(`
-    INSERT INTO daily_records (
+  const result = await pool.query(
+    `INSERT INTO daily_records (
       user_id,
       entry_date,
       meal_type,
       product_id,
       quantity_consumed,
       calculated_calories
-    ) VALUES (?, ?, ?, ?, ?, ?)
-  `).run(
-    req.user.id,
-    date,
-    mealType,
-    Number(productId),
-    Number(quantityConsumed),
-    calculatedCalories
+    ) VALUES ($1, $2, $3, $4, $5, $6)
+    RETURNING *`,
+    [
+      req.user.id,
+      date,
+      mealType,
+      Number(productId),
+      Number(quantityConsumed),
+      calculatedCalories
+    ]
   );
 
-  const created = db.prepare(`
-    SELECT * FROM daily_records WHERE id = ?
-  `).get(result.lastInsertRowid);
-
+  const created = result.rows[0];
   res.status(201).json(created);
 });
 
-app.put("/api/entries/:id", authMiddleware, (req, res) => {
+app.put("/api/entries/:id", authMiddleware, async (req, res) => {
   const entryId = Number(req.params.id);
   const { date, mealType, productId, quantityConsumed } = req.body;
 
-  const existing = db.prepare(`
-    SELECT * FROM daily_records WHERE id = ? AND user_id = ?
-  `).get(entryId, req.user.id);
+  const existingResult = await pool.query(
+    `SELECT * FROM daily_records WHERE id = $1 AND user_id = $2`,
+    [entryId, req.user.id]
+  );
+  const existing = existingResult.rows[0];
 
   if (!existing) {
     return res.status(404).json({ error: "Registro no encontrado." });
@@ -417,70 +441,83 @@ app.put("/api/entries/:id", authMiddleware, (req, res) => {
     return res.status(400).json({ error: "Tipo de comida inválido." });
   }
 
-  const product = db.prepare(`SELECT * FROM products WHERE id = ?`).get(Number(productId));
+  const productResult = await pool.query(
+    `SELECT * FROM products WHERE id = $1`,
+    [Number(productId)]
+  );
+  const product = productResult.rows[0];
+
   if (!product) {
     return res.status(404).json({ error: "Producto no encontrado." });
   }
 
-  const calculatedCalories = Number(calculateCalories(product, quantityConsumed).toFixed(2));
-
-  db.prepare(`
-    UPDATE daily_records
-    SET entry_date = ?,
-        meal_type = ?,
-        product_id = ?,
-        quantity_consumed = ?,
-        calculated_calories = ?
-    WHERE id = ? AND user_id = ?
-  `).run(
-    date,
-    mealType,
-    Number(productId),
-    Number(quantityConsumed),
-    calculatedCalories,
-    entryId,
-    req.user.id
+  const calculatedCalories = Number(
+    calculateCalories(product, quantityConsumed).toFixed(2)
   );
 
-  const updated = db.prepare(`
-    SELECT * FROM daily_records WHERE id = ? AND user_id = ?
-  `).get(entryId, req.user.id);
+  const result = await pool.query(
+    `UPDATE daily_records
+     SET entry_date = $1,
+         meal_type = $2,
+         product_id = $3,
+         quantity_consumed = $4,
+         calculated_calories = $5
+     WHERE id = $6 AND user_id = $7
+     RETURNING *`,
+    [
+      date,
+      mealType,
+      Number(productId),
+      Number(quantityConsumed),
+      calculatedCalories,
+      entryId,
+      req.user.id
+    ]
+  );
 
+  const updated = result.rows[0];
   res.json(updated);
 });
 
-app.delete("/api/entries/:id", authMiddleware, (req, res) => {
+app.delete("/api/entries/:id", authMiddleware, async (req, res) => {
   const entryId = Number(req.params.id);
 
-  const existing = db.prepare(`
-    SELECT * FROM daily_records WHERE id = ? AND user_id = ?
-  `).get(entryId, req.user.id);
+  const existingResult = await pool.query(
+    `SELECT * FROM daily_records WHERE id = $1 AND user_id = $2`,
+    [entryId, req.user.id]
+  );
+  const existing = existingResult.rows[0];
 
   if (!existing) {
     return res.status(404).json({ error: "Registro no encontrado." });
   }
 
-  db.prepare(`DELETE FROM daily_records WHERE id = ? AND user_id = ?`).run(entryId, req.user.id);
+  await pool.query(
+    `DELETE FROM daily_records WHERE id = $1 AND user_id = $2`,
+    [entryId, req.user.id]
+  );
+
   res.json({ ok: true });
 });
 
-app.get("/api/summary", authMiddleware, (req, res) => {
+app.get("/api/summary", authMiddleware, async (req, res) => {
   const date = req.query.date;
 
   if (!date) {
     return res.status(400).json({ error: "La fecha es obligatoria." });
   }
 
-  const total = db.prepare(`
-    SELECT
-      COALESCE(SUM(calculated_calories), 0) as totalCalories,
-      COUNT(*) as totalEntries
-    FROM daily_records
-    WHERE entry_date = ?
-      AND user_id = ?
-  `).get(date, req.user.id);
+  const result = await pool.query(
+    `SELECT
+      COALESCE(SUM(calculated_calories), 0) as "totalCalories",
+      COUNT(*)::int as "totalEntries"
+     FROM daily_records
+     WHERE entry_date = $1
+       AND user_id = $2`,
+    [date, req.user.id]
+  );
 
-  res.json(total);
+  res.json(result.rows[0]);
 });
 
 
