@@ -146,6 +146,17 @@ export default function App() {
     setSummary({ totalCalories: 0, totalEntries: 0 });
   }
 
+  function handleAuthError(data) {
+    if (data?.error === "Token inválido o expirado." || data?.error === "No autorizado.") {
+      handleLogout();
+      alert("Tu sesión venció. Iniciá sesión nuevamente.");
+      return true;
+    }
+    return false;
+  } 
+
+
+
 
 
   async function fetchProducts(category = "") {
@@ -159,34 +170,42 @@ export default function App() {
   }
 
   async function fetchEntries(date) {
-    if (!token) return;
+  if (!token) return;
 
-    const response = await fetch(`${API_URL}/entries?date=${date}`, {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    });
-
-    const data = await response.json();
-    if (response.ok) {
-      setEntries(data);
+  const response = await fetch(`${API_URL}/entries?date=${date}`, {
+    headers: {
+      Authorization: `Bearer ${token}`
     }
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    if (handleAuthError(data)) return;
+    return;
   }
+
+  setEntries(data);
+}
 
   async function fetchSummary(date) {
-    if (!token) return;
+  if (!token) return;
 
-    const response = await fetch(`${API_URL}/summary?date=${date}`, {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    });
-
-    const data = await response.json();
-    if (response.ok) {
-      setSummary(data);
+  const response = await fetch(`${API_URL}/summary?date=${date}`, {
+    headers: {
+      Authorization: `Bearer ${token}`
     }
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    if (handleAuthError(data)) return;
+    return;
   }
+
+  setSummary(data);
+}
 
   useEffect(() => {
     fetchProducts(filterCategory);
@@ -316,43 +335,44 @@ export default function App() {
   }
 
   async function handleSaveEntry(event) {
-    event.preventDefault();
+  event.preventDefault();
 
-    const payload = {
-      date: entryForm.date,
-      mealType: entryForm.mealType,
-      productId: Number(entryForm.productId),
-      quantityConsumed: Number(entryForm.quantityConsumed)
-    };
+  const payload = {
+    date: entryForm.date,
+    mealType: entryForm.mealType,
+    productId: Number(entryForm.productId),
+    quantityConsumed: Number(entryForm.quantityConsumed)
+  };
 
-    const isEditing = Boolean(editingEntryId);
-    const url = isEditing
-      ? `${API_URL}/entries/${editingEntryId}`
-      : `${API_URL}/entries`;
+  const isEditing = Boolean(editingEntryId);
+  const url = isEditing
+    ? `${API_URL}/entries/${editingEntryId}`
+    : `${API_URL}/entries`;
 
-    const response = await fetch(url, {
-      method: isEditing ? "PUT" : "POST",
-      headers: getAuthHeaders(),
-      body: JSON.stringify(payload)
-    });
+  const response = await fetch(url, {
+    method: isEditing ? "PUT" : "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify(payload)
+  });
 
-    const data = await response.json();
+  const data = await response.json();
 
-    if (!response.ok) {
-      alert(data.error || "No se pudo guardar el registro.");
-      return;
-    }
-
-    await fetchEntries(selectedDate);
-    await fetchSummary(selectedDate);
-
-    setEntryForm({
-      ...emptyEntryForm,
-      date: selectedDate,
-      productId: products[0] ? String(products[0].id) : ""
-    });
-    setEditingEntryId(null);
+  if (!response.ok) {
+    if (handleAuthError(data)) return;
+    alert(data.error || "No se pudo guardar el registro.");
+    return;
   }
+
+  await fetchEntries(selectedDate);
+  await fetchSummary(selectedDate);
+
+  setEntryForm({
+    ...emptyEntryForm,
+    date: selectedDate,
+    productId: products[0] ? String(products[0].id) : ""
+  });
+  setEditingEntryId(null);
+}
 
   function handleEditEntry(entry) {
     setEditingEntryId(entry.id);
@@ -366,35 +386,36 @@ export default function App() {
   }
 
   async function handleDeleteEntry(entryId) {
-    const confirmed = window.confirm("¿Eliminar este registro?");
-    if (!confirmed) return;
+  const confirmed = window.confirm("¿Eliminar este registro?");
+  if (!confirmed) return;
 
-    const response = await fetch(`${API_URL}/entries/${entryId}`, {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      alert(data.error || "No se pudo eliminar el registro.");
-      return;
+  const response = await fetch(`${API_URL}/entries/${entryId}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`
     }
+  });
 
-    if (editingEntryId === entryId) {
-      setEditingEntryId(null);
-      setEntryForm({
-        ...emptyEntryForm,
-        date: selectedDate,
-        productId: products[0] ? String(products[0].id) : ""
-      });
-    }
+  const data = await response.json();
 
-    await fetchEntries(selectedDate);
-    await fetchSummary(selectedDate);
+  if (!response.ok) {
+    if (handleAuthError(data)) return;
+    alert(data.error || "No se pudo eliminar el registro.");
+    return;
   }
+
+  if (editingEntryId === entryId) {
+    setEditingEntryId(null);
+    setEntryForm({
+      ...emptyEntryForm,
+      date: selectedDate,
+      productId: products[0] ? String(products[0].id) : ""
+    });
+  }
+
+  await fetchEntries(selectedDate);
+  await fetchSummary(selectedDate);
+}
 
   function handleCancelEntryEdit() {
     setEditingEntryId(null);
