@@ -59,6 +59,7 @@ export default function App() {
   const [activeSection, setActiveSection] = useState("Inicio");
   const [initialLoading, setInitialLoading] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState("...");
+  const [selectedMealFilter, setSelectedMealFilter] = useState("Desayuno");
   const emptyProductForm = {
     name: "",
     measureType: "Gramos",
@@ -263,6 +264,22 @@ export default function App() {
     }
     return qty * Number(selectedProduct.reference_calories);
   }, [selectedProduct, entryForm.quantityConsumed]);
+
+  const filteredEntries = useMemo(() => {
+    if (!selectedMealFilter) return entries;
+
+    return entries.filter((entry) => {
+      if (selectedMealFilter === "Colaciones") {
+        return [
+          "Colación Mañana",
+          "Colación Tarde",
+          "Colación Noche"
+        ].includes(entry.meal_type);
+      }
+
+      return entry.meal_type === selectedMealFilter;
+    });
+  }, [entries, selectedMealFilter]);
 
   function updateProductField(field, value) {
     setProductForm((prev) => ({ ...prev, [field]: value }));
@@ -535,7 +552,7 @@ export default function App() {
     );
   }
 
-    return (
+  return (
     <div className="page">
       <header className="topbar">
         <div className="brand-block">
@@ -900,7 +917,20 @@ export default function App() {
           </section>
 
           <section className="card">
-            <h2>Registros del día</h2>
+            <div className="toolbar">
+              <h2>Registros del día</h2>
+
+              <select
+                value={selectedMealFilter}
+                onChange={(e) => setSelectedMealFilter(e.target.value)}
+              >
+                <option value="Desayuno">🌅 Desayuno</option>
+                <option value="Almuerzo">🍽 Almuerzo</option>
+                <option value="Merienda">☕ Merienda</option>
+                <option value="Cena">🌙 Cena</option>
+                <option value="Colaciones">🍎 Colaciones</option>
+              </select>
+            </div>
             <div className="table-wrapper">
               <table>
                 <thead>
@@ -914,7 +944,7 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {entries.map((entry) => (
+                  {filteredEntries.map((entry) => (
                     <tr key={entry.id}>
                       <td>{entry.meal_type}</td>
                       <td>{entry.product_name}</td>
