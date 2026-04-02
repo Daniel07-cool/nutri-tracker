@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 const API_URL = "https://nutri-tracker-m4bd.onrender.com/api";
-const APP_VERSION = "3.0.0";
+const APP_VERSION = "3.0.1";
 
 const MEAL_TYPES = [
   "Desayuno",
