@@ -457,3 +457,11 @@ th {
     flex-direction: column;
   }
 }
+
+.app-footer {
+  margin-top: 24px;
+  padding: 18px 12px 28px;
+  text-align: center;
+  opacity: 0.75;
+  font-size: 0.9rem;
+}

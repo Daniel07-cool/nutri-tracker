@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 const API_URL = "https://nutri-tracker-m4bd.onrender.com/api";
+const APP_VERSION = "3.0.0";
 
 const MEAL_TYPES = [
   "Desayuno",
@@ -57,7 +58,7 @@ export default function App() {
   });
   const [activeSection, setActiveSection] = useState("Inicio");
   const [initialLoading, setInitialLoading] = useState(true);
-  const [loadingMessage, setLoadingMessage] = useState("Conectando con la base de datos...");
+  const [loadingMessage, setLoadingMessage] = useState("...");
   const emptyProductForm = {
     name: "",
     measureType: "Gramos",
@@ -948,6 +949,9 @@ export default function App() {
           </section>
         </>
       )}
+      <footer className="app-footer">
+        <small>Plan Nutricional · Versión {APP_VERSION}</small>
+      </footer>
     </div>
   );
 }
