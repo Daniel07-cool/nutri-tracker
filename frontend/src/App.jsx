@@ -163,7 +163,7 @@ export default function App() {
   async function checkBackendConnection() {
     try {
       setInitialLoading(true);
-      setLoadingMessage("Conectando con la base de datos...");
+      setLoadingMessage("...");
 
       const response = await fetch(`${API_URL}/health`);
       const data = await response.json();
